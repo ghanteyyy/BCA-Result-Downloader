@@ -1,121 +1,67 @@
 import os
 import subprocess
 from tkinter import *
+import tkinter.ttk as ttk
 from tkinter.font import Font
-from tkinter import messagebox
-from tkinter.ttk import Separator
-from PIL import Image, ImageTk
+from images import Images
 from notices import Notices
-from audio import Audio
 from writer import JSON
 from error import Error
-import utils
+from settings import Settings
 
 
-class BCA_Notice_Downloader:
+class bca_notice_downloader:
     def __init__(self):
-        self.JSON = JSON()
-        self.Audio = Audio()
+        self.Writer = JSON()
         self.Notices = Notices()
+        self.fetched_notices = []
+        self.populate_timer = None
+        self.downloads_path = self.Notices.downloads_path
 
-        self.all_notices = []
-        self.update_notice_timer = None
+        self.window = Tk()
+        self.window.withdraw()
 
-    def show_in_folder(self, event, pdf_name):
-        """
-        Open the file explorer and reveal the downloaded PDF.
+        self.main_frame = Frame(self.window)
+        self.main_frame.pack()
 
-        Args:
-            - event: The event triggering the reveal action.
-            - pdf_name (str): The path of the pdf_name to be revealed in the explorer
-        """
+        self.Images = Images()
+        self.Error = Error(self.window, self.main_frame)
+        self.Settings = Settings(self.window, self.Notices.downloads_path, self.main_frame, self.populate_notice)
 
-        FILE_BROWSER_PATH = os.path.join(os.getenv('WINDIR'), 'explorer.exe')
-        pdf_location = os.path.join(self.Notices.downloads_path, pdf_name)
+        self.row_1 = Frame(self.main_frame)
+        self.row_1.pack(fill='x')
 
-        subprocess.run([FILE_BROWSER_PATH, '/select,', pdf_location])
+        self.setting_btn = Label(self.row_1, cursor='hand2')
+        self.setting_btn.pack(side=RIGHT, ipadx=5)
+        self.setting_btn.config(image=self.Images.setting_image)
 
-    def show_in_browser(self, event, pdf_path):
-        """
-        Open the downloaded pdf in default browser.
+        self.notice_frame = Frame(self.main_frame)
+        self.notice_frame.pack(fill='x', expand=True)
 
-        Args:
-            - event: The event triggering the reveal action.
-            - pdf_path (str): The path of the pdf to be opened in the browser
-        """
+        self.window.after(0, self.center_window)
+        self.window.mainloop()
 
-        full_pdf_path = os.path.join(self.Notices.downloads_path, pdf_path)
-        os.startfile(full_pdf_path)
-
-    def download_pdf(self, event, download_link):
-        """
-        Downloads the PDF file from the specified link and updates the GUI accordingly
-
-        Args:
-            - event: The event triggering the function call (not used)
-            - download_link (str): The URL to download the PDF file from.
-        """
-
-        pdf_name = os.path.basename(download_link)
-        pdf_path = os.path.join(self.Notices.downloads_path, pdf_name)
-
-        with open(pdf_path, 'wb') as f:  # Saving pdf to the download path
-            content = self.Notices.session.get(download_link, stream=True)
-            contents = content.content
-            f.write(contents)
-
-        buttons_frame = event.widget.master  # Getting frame where buttons reside
-
-        for widget in buttons_frame.winfo_children():  # Removing all widgets from buttons_frame
-            widget.destroy()
-
-        binding_function = lambda event=Event, location=pdf_name: self.show_in_folder(event, location)
-
-        self.place_buttons(True, buttons_frame, pdf_name, self.show_in_directory_image, binding_function)
-
-    def delete_pdf(self, event, pdf_name):
+    def center_window(self):
         '''
-        Remove the downloaded pdf from the device
+        Set the position of the window to the center of the screen upon program launch
         '''
 
-        try:
-            pdf_path = os.path.join(self.Notices.downloads_path, pdf_name)
-            os.remove(pdf_path)
+        self.populate_notice()
 
-            event.widget.master.master.destroy()
+        self.window.update()
+        self.window.title('BCA Notice Downloader')
+        self.window.iconphoto(False, self.Images.icon_image)
 
-            for notice in self.all_notices:
-                if notice['notice_name'] == pdf_name:
-                    self.all_notices.remove(notice)
+        width, height = self.window.winfo_width(), self.window.winfo_height()
+        screenwidth, screenheight = self.window.winfo_screenwidth() // 2, self.window.winfo_screenheight() // 2
+        self.window.geometry(f'+{screenwidth - width // 2}+{screenheight - height // 2}')
 
-            self.JSON.write_json(pdf_name)
+        self.window.resizable(0, 0)
+        self.window.deiconify()
 
-            self.create_widgets(scrape=False)
+        self.window.resizable(False, False)
 
-        except:
-            messagebox.showerror('ERR', "Error: Unable to delete the file. The file either does not exist or is located in a directory that requires administrator privileges for deletion")
-
-    def resize_image(self, image_name, size=(20, 20)):
-        """
-        Resize the given image to the specified size using Lanczos resampling
-
-        Args:
-            - image_name (str): The image to be resized
-            - size (tuple): A tuple representing the new size of the image. Default is (40, 40)
-
-        Returns:
-            - PIL.Image.Image: The resized image.
-        """
-
-        image_path = utils.resource_path(image_name)
-        image = Image.open(image_path)
-
-        image = image.resize(size, Image.Resampling.LANCZOS)
-        image = ImageTk.PhotoImage(image)
-
-        return image
-
-    def create_widgets(self, scrape=True):
+    def populate_notice(self, do_not_fetch=False):
         '''
         Create widgets for displaying notices.
 
@@ -127,132 +73,136 @@ class BCA_Notice_Downloader:
         an appropriate message.
 
         If notices are available, it displays them with options to view or download.
-
-        Parameters:
-            scrape (bool): If True, force scraping for new notices. Defaults to True.
-
         '''
 
-        for children in self.window.winfo_children():
-            children.destroy()
+        error_message = self.Error.has_error_occurred(notice=self.Notices)
 
-        if scrape:
-            self.all_notices = self.Notices.get_notices()
+        if do_not_fetch is True:
+            self.window.withdraw()
 
-        if utils.is_internet() is False:
-            self.Error.error_text_var.set('Unable to connect to the internet')
-            self.Error.show_error()
-
-        elif not self.all_notices:
-            self.Error.error_text_var.set('No notices have been published as of yet !!!')
-            self.Error.show_error()
+        if error_message:
+            self.Error.show_error(error_message)
 
         else:
-            mute_unmute_label = Label(self.window, text="Press <space> key to pause or resume audio", justify=CENTER, font=('Calibri', 12, 'bold'), background='white', foreground='red')
-            mute_unmute_label.pack(ipady=5, fill=X, expand=True)
+            if do_not_fetch is False:
+                notices = self.Notices.get_notices()
 
-            notices_frame = Frame(self.window, background='white')
-            notices_frame.pack(padx=10, pady=10)
+            else:
+                notices = self.fetched_notices
+                self.window.after(250, self.window.deiconify)
 
-            for index, notice in enumerate(self.all_notices):
-                notice_name = notice['notice_name']
-                is_notice_downloaded = notice['is_pdf_downloaded']
+            if do_not_fetch is True or notices != self.fetched_notices:
+                self.Error.destroy_error_message()
 
-                inner_frame = Frame(notices_frame, background='white', highlightthickness=2, highlightbackground='grey', highlightcolor='grey')
-                inner_frame.pack(pady=(10 if index > 0 else 0, 0), fill='x')
+                for widget in self.notice_frame.winfo_children():
+                    widget.destroy()
 
-                if is_notice_downloaded:
-                    image = self.show_in_directory_image
-                    binding_function = lambda event=Event, location=notice_name: self.show_in_folder(event, location)
+                self.fetched_notices = notices
 
-                else:
-                    image = self.download_image
-                    binding_function = lambda event=Event, pdf_link=notice['download_link']: self.download_pdf(event, pdf_link)
+                for notice in notices:
+                    notice_name = notice['notice_name']
 
-                date_label = Label(inner_frame, text=notice['date'], font=Font(family='Calibri', size=15), height=3, background='#43766C', foreground='whitesmoke')
-                date_label.pack(side=LEFT, ipadx=10, fill='x', expand=True)
+                    per_notice_frame = Frame(self.notice_frame, highlightthickness=2, highlightbackground='grey', highlightcolor='grey')
+                    per_notice_frame.pack(fill='x', padx=5, pady=3)
 
-                date_separator = Separator(inner_frame, orient=VERTICAL)
-                date_separator.pack(side=LEFT, fill='y')
+                    date_label = Label(per_notice_frame, text=notice['date'], width=10, font=Font(family='Calibri', size=15), height=3, background='#43766C', foreground='whitesmoke')
+                    date_label.pack(side=LEFT, ipadx=5)
 
-                notice_label = Label(inner_frame, text=notice_name.split('.')[0], font=Font(family='Calibri', size=15), height=3, background='#43766C', foreground='whitesmoke')
-                notice_label.pack(side=LEFT, ipadx=10, fill='x', expand=True)
+                    date_separator = ttk.Separator(per_notice_frame, orient=VERTICAL)
+                    date_separator.pack(side=LEFT, fill='y')
 
-                buttons_frame = Frame(inner_frame, background='white')
-                buttons_frame.pack(side=RIGHT, fill=BOTH, ipadx=10)
+                    notice_label = Label(per_notice_frame, text=notice_name, font=Font(family='Calibri', size=15), height=3, background='#43766C', foreground='whitesmoke')
+                    notice_label.pack(side=LEFT, fill='x', expand=True, ipadx=20)
 
-                self.place_buttons(is_notice_downloaded, buttons_frame, notice_name, image, binding_function)
+                    buttons_frame = Frame(per_notice_frame)
+                    buttons_frame.pack(side=LEFT, ipadx=3)
 
-            self.Audio.play_audio()
+                    is_notice_downloaded = notice['is_pdf_downloaded']
 
-        if scrape:
-            self.update_notice_timer = self.window.after(60000, self.create_widgets)
+                    if is_notice_downloaded:
+                        self.place_buttons_after_downloading(buttons_frame, notice_name)
 
-    def place_buttons(self, is_notice_downloaded, buttons_frame, notice_name, image, binding_function):
+                    else:
+                        download_button = Label(buttons_frame, relief=FLAT, cursor='hand2')
+                        download_button.pack(fill=BOTH, expand=True)
+                        download_button.config(image=self.Images.download_pdf_image)
+                        download_button.bind('<Button-1>', lambda event=Event, frame=buttons_frame, download_link=notice['download_link']: self.download_notice(event, frame, download_link))
+
+        self.populate_timer = self.window.after(60000, self.populate_notice)
+        self.setting_btn.bind('<Button-1>', lambda event=Event, populate_timer=self.populate_timer: self.Settings.show_settings_widgets(event, populate_timer))
+
+    def place_buttons_after_downloading(self, frame, notice_name):
         '''
         Place the 'open_in_folder' and 'open_in_browser' buttons after
         the user downloads the PDF, or only place download buttons when
         the PDF has not been downloaded
         '''
 
-        label_common_attributes = {'relief': FLAT, 'cursor': 'hand2', 'background': 'white'}
+        for widget in frame.winfo_children():
+            widget.destroy()
 
-        if is_notice_downloaded:
-            open_in_browser_button = Label(buttons_frame, image=self.open_in_browser_image, **label_common_attributes)
-            open_in_browser_button.pack()
-            open_in_browser_button.image = self.open_in_browser_image
-            open_in_browser_button.bind('<Button-1>', lambda event=Event, pdf_path=notice_name: self.show_in_browser(event, pdf_path))
+        label_common_attributes = {'relief': FLAT, 'cursor': 'hand2'}
 
-        download_or_open_in_explorer_button = Label(buttons_frame, image=image, **label_common_attributes)
-        download_or_open_in_explorer_button.pack(fill=BOTH, expand=True)
-        download_or_open_in_explorer_button.image = image
-        download_or_open_in_explorer_button.bind('<Button-1>', binding_function)
+        open_in_browser_button = Label(frame, image=self.Images.open_in_browser_image, **label_common_attributes)
+        open_in_browser_button.pack()
+        open_in_browser_button.config(image=self.Images.open_in_browser_image)
+        open_in_browser_button.bind('<Button-1>', lambda event=Event, pdf_name=notice_name: self.show_in_browser(event, pdf_name))
 
-        if is_notice_downloaded:
-            delete_button = Label(buttons_frame, image=self.delete_image, **label_common_attributes)
-            delete_button.pack()
-            delete_button.image = self.delete_image
-            delete_button.bind('<Button-1>', lambda event=Event, pdf_name=notice_name: self.delete_pdf(event, pdf_name))
+        open_in_explorer_button = Label(frame, **label_common_attributes)
+        open_in_explorer_button.pack(fill=BOTH, expand=True)
+        open_in_explorer_button.config(image=self.Images.show_in_directory_image)
+        open_in_explorer_button.bind('<Button-1>', lambda event=Event, pdf_name=notice_name: self.show_in_explorer(event, pdf_name))
 
-    def center_window(self):
+        delete_button = Label(frame, **label_common_attributes)
+        delete_button.pack()
+        delete_button.config(image=self.Images.delete_image)
+        delete_button.bind('<Button-1>', lambda event=Event, frame=frame, pdf_name=notice_name: self.delete_notice(event, frame, pdf_name))
+
+    def download_notice(self, event, frame, download_link):
+        """
+        Downloads the PDF file from the specified link and updates the GUI accordingly
+        """
+
+        pdf_name = os.path.basename(download_link)
+        pdf_path = os.path.join(self.downloads_path, pdf_name)
+
+        with open(pdf_path, 'wb') as f:  # Saving pdf to the download path
+            content = self.Notices.session.get(download_link, stream=True)
+            contents = content.content
+            f.write(contents)
+
+        self.place_buttons_after_downloading(frame, pdf_name)
+
+    def show_in_browser(self, event, pdf_name):
+        """
+        Open the downloaded pdf in default browser.
+        """
+
+        pdf_path = os.path.join(self.downloads_path, pdf_name)
+        os.startfile(pdf_path)
+
+    def show_in_explorer(self, event, pdf_name):
+        """
+        Open the file explorer and reveal the downloaded PDF.
+        """
+
+        pdf_path = os.path.join(self.downloads_path, pdf_name)
+        FILE_BROWSER_PATH = os.path.join(os.getenv('WINDIR'), 'explorer.exe')
+
+        subprocess.run([FILE_BROWSER_PATH, '/select,', pdf_path])
+
+    def delete_notice(self, event, frame, pdf_name):
         '''
-        Set the position of the window to the center of the screen upon program launch
+        Remove the downloaded pdf from the device
         '''
 
-        self.window.update()
-        self.window.iconphoto(False, ImageTk.PhotoImage(Image.open(utils.resource_path('icon.jpg'))))
+        pdf_path = os.path.join(self.downloads_path, pdf_name)
 
-        width, height = self.window.winfo_width(), self.window.winfo_height()
-        screenwidth, screenheight = self.window.winfo_screenwidth() // 2, self.window.winfo_screenheight() // 2
-        self.window.geometry(f'+{screenwidth - width // 2}+{screenheight - height // 2}')
+        os.remove(pdf_path)
+        frame.master.destroy()
 
-        self.window.resizable(0, 0)
-        self.window.deiconify()
-
-        self.window.resizable(False, False)
-
-    def main(self):
-        self.window = Tk()
-        self.window.withdraw()
-
-        self.window.config(background='white')
-        self.window.title('BCA Notices')
-
-        self.Error = Error(self.window, self.Audio)
-
-        self.delete_image = self.resize_image('delete.png')
-        self.download_image = self.resize_image('download_pdf.png')
-        self.open_in_browser_image = self.resize_image('open_in_browser.png')
-        self.show_in_directory_image = self.resize_image('show_in_directory.png')
-
-        self.create_widgets()
-
-        self.window.after(250, self.center_window)
-        self.window.bind('<space>', self.Audio.pause_unpause_audio)
-
-        self.window.mainloop()
+        self.Writer.write_json(pdf_name)
 
 
 if __name__ == '__main__':
-    win = BCA_Notice_Downloader()
-    win.main()
+    bca_notice_downloader()
