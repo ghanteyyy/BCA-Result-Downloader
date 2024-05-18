@@ -5,10 +5,7 @@ import requests
 
 def is_internet():
         """
-        Check if there is an active internet connection.
-
-        Returns:
-        - bool: True if there is an active internet connection, False otherwise.
+        Check if there is an active internet connection
         """
 
         try:
