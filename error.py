@@ -1,33 +1,53 @@
 from tkinter import *
 from tkinter.font import Font
+import utils
 
 
 class Error:
-    def __init__(self, window, audio):
-        self.Audio = audio
+    def __init__(self, window, main_frame):
         self.window = window
-
-        self.error_text_var = StringVar()
+        self.main_frame = main_frame
         self.is_error_message_shown = False
 
-    def show_error(self):
+    def has_error_occurred(self, notice):
+        """
+        Checks for errors related to internet connectivity and the presence of notices.
+
+        This method evaluates two potential error conditions:
+            - Lack of internet connectivity.
+            - Absence of published notices.
+
+        Returns:
+            str: A message describing the error if one has occurred, either:
+                - 'Unable to connect to the internet' if there is no internet connection.
+                - 'No notices have been published as of yet !!!' if there are no notices.
+                None if no errors are found.
+        """
+
+        if utils.is_internet() is False:
+            return 'Unable to connect to the internet'
+
+        elif len(notice.get_notices()) == 0:
+            return 'No notices have been published as of yet !!!'
+
+    def show_error(self, error_message):
         '''
         Display error messages under the following conditions:
-            1. No internet connection detected
-            2. No notice published
+            - No internet connection detected
+            - No notice published
         '''
 
         if self.is_error_message_shown is False:
-            self.Audio.stop_audio()
+            self.main_frame.pack_forget()
             self.is_error_message_shown = True
 
-            inner_frame = Frame(self.window, background='whitesmoke')
-            inner_frame.pack()
+            self.inner_frame = Frame(self.window, background='whitesmoke')
+            self.inner_frame.pack()
 
-            no_notice_label = Label(inner_frame, textvariable=self.error_text_var, font=Font(family='Calibri', size=20), justify=CENTER, height=3, background='whitesmoke', foreground='#FF204E')
+            no_notice_label = Label(self.inner_frame, text=error_message, font=Font(family='Calibri', size=20), justify=CENTER, height=3, background='whitesmoke', foreground='#FF204E')
             no_notice_label.pack(ipadx=10, fill=BOTH)
 
-            re_checking_frame = Frame(inner_frame, background='whitesmoke')
+            re_checking_frame = Frame(self.inner_frame, background='whitesmoke')
             re_checking_frame.pack()
 
             dot_string_text = StringVar()
@@ -53,3 +73,11 @@ class Error:
 
             string_var.set(update_dots)
             self.animate_dot_timer = self.window.after(1000, lambda: self.animate_dot(string_var))
+
+    def destroy_error_message(self):
+        '''
+        Remove error messages
+        '''
+
+        self.is_error_message_shown = False
+        self.inner_frame.pack_forget()
